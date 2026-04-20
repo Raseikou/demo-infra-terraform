@@ -1,0 +1,12 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control (should be in .gitignore)
+
+aws_region     = "ap-northeast-1"
+instance_name  = "demo-web-server"
+instance_type  = "t3.micro"
+environment    = "dev"
+vpc_id         = "vpc-xxxxxxxxx"     # Replace with your VPC ID
+subnet_id      = "subnet-xxxxxxxxx"  # Replace with your Subnet ID
+root_volume_size = 20
+allowed_ssh_cidr = ["0.0.0.0/0"]     # Restrict this in production!

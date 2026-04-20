@@ -1,0 +1,105 @@
+name: "Terraform PR Check"
+
+on:
+  pull_request:
+    paths:
+      - "practice-04/**"
+      - "practice-05/**"
+      - ".github/workflows/terraform-pr-check.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform-check:
+    name: "Terraform Format & Validate"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        terraform-dir: [practice-04, practice-05]
+      max-parallel: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: "Terraform Format Check - ${{ matrix.terraform-dir }}"
+        id: fmt
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform fmt -check -recursive -diff 2>&1 || { echo "FAILURE=true" >> $GITHUB_ENV; }
+        continue-on-error: true
+
+      - name: "Terraform Init - ${{ matrix.terraform-dir }}"
+        id: init
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform init -backend=false -no-color
+        continue-on-error: true
+
+      - name: "Terraform Validate - ${{ matrix.terraform-dir }}"
+        id: validate
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform validate -no-color
+        continue-on-error: true
+
+      - name: Comment PR - Check Results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const dir = '${{ matrix.terraform-dir }}';
+            let output = `## Terraform Check: ${dir}\n\n`;
+            
+            const fmtStatus = '${{ steps.fmt.outcome }}';
+            const initStatus = '${{ steps.init.outcome }}';
+            const validateStatus = '${{ steps.validate.outcome }}';
+            
+            output += `| Check | Status |\n`;
+            output += `|-------|--------|\n`;
+            output += `| Format | ${fmtStatus === 'success' ? '✅' : '❌'} |\n`;
+            output += `| Init | ${initStatus === 'success' ? '✅' : '❌'} |\n`;
+            output += `| Validate | ${validateStatus === 'success' ? '✅' : '❌'} |\n`;
+            
+            // Find or delete existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && comment.body.includes(`Terraform Check: ${dir}`)
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: output
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: output
+              });
+            }
+
+      - name: Fail if checks failed
+        if: always()
+        run: |
+          if [ "${{ steps.fmt.outcome }}" != "success" ] || \
+             [ "${{ steps.validate.outcome }}" != "success" ]; then
+            echo "Terraform checks failed!"
+            exit 1
+          fi
