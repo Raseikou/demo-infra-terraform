@@ -59,7 +59,7 @@ resource "aws_instance" "app" {
     encrypted             = true
   }
 
-  monitoring = true
+  monitoring    = true
   ebs_optimized = true
 
   tags = {
