@@ -32,29 +32,6 @@ variable "environment" {
   }
 }
 
-variable "vpc_id" {
-  type        = string
-  description = "VPC ID where the instance will be launched"
-  nullable    = false
-}
-
-variable "subnet_id" {
-  type        = string
-  description = "Subnet ID where the instance will be launched"
-  nullable    = false
-}
-
-variable "root_volume_size" {
-  type        = number
-  description = "Root volume size in GB"
-  default     = 30
-
-  validation {
-    condition     = var.root_volume_size >= 10 && var.root_volume_size <= 100
-    error_message = "Root volume size must be between 10 and 100 GB."
-  }
-}
-
 variable "allowed_ssh_cidr" {
   type        = list(string)
   description = "CIDR blocks allowed for SSH access"

@@ -11,11 +11,10 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Security Group
+# Security Group (uses default VPC)
 resource "aws_security_group" "app_sg" {
   name        = "${var.app_name}-sg"
   description = "Security group for application server"
-  vpc_id      = var.vpc_id
 
   ingress {
     from_port   = 22
@@ -45,16 +44,15 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-# EC2 Instance for Application
+# EC2 Instance for Application (uses default subnet)
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
-  subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
   root_block_device {
     volume_type           = "gp3"
-    volume_size           = var.root_volume_size
+    volume_size           = 30
     delete_on_termination = true
     encrypted             = true
   }
