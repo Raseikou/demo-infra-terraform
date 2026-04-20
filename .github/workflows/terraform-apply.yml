@@ -1,0 +1,159 @@
+name: "Terraform Apply (Main Branch)"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "practice-04/**"
+      - "practice-05/**"
+      - ".github/workflows/terraform-apply.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Ensure only one apply runs at a time
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: "Terraform Plan for Apply"
+    runs-on: ubuntu-latest
+    outputs:
+      plan_files: ${{ steps.plan.outputs.files }}
+    strategy:
+      matrix:
+        terraform-dir: [practice-04, practice-05]
+      max-parallel: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: "Terraform Format Check - ${{ matrix.terraform-dir }}"
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform fmt -check -recursive
+
+      - name: "Terraform Init - ${{ matrix.terraform-dir }}"
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform init -no-color
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: "Terraform Validate - ${{ matrix.terraform-dir }}"
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform validate -no-color
+
+      - name: "Terraform Plan - ${{ matrix.terraform-dir }}"
+        id: plan
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform plan -no-color -out=tfplan
+          terraform show -json tfplan > tfplan.json
+          echo "files=${{ matrix.terraform-dir }}" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan-${{ matrix.terraform-dir }}
+          path: |
+            ${{ matrix.terraform-dir }}/tfplan
+            ${{ matrix.terraform-dir }}/tfplan.json
+          retention-days: 1
+
+  approval:
+    name: "Manual Approval Required"
+    needs: plan
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      # Require approval from specific users/teams
+      reviewers:
+        - ${{ github.actor }}
+    steps:
+      - name: "Approval Information"
+        run: |
+          echo "✅ All Terraform plans generated successfully"
+          echo "Review the artifacts in the workflow run to see the planned changes"
+          echo "This workflow requires manual approval to proceed with apply"
+
+  apply:
+    name: "Terraform Apply"
+    needs: [plan, approval]
+    runs-on: ubuntu-latest
+    if: success()
+    strategy:
+      matrix:
+        terraform-dir: [practice-04, practice-05]
+      max-parallel: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tfplan-${{ matrix.terraform-dir }}
+          path: ${{ matrix.terraform-dir }}/
+
+      - name: "Terraform Init - ${{ matrix.terraform-dir }}"
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform init -no-color
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: "Terraform Apply - ${{ matrix.terraform-dir }}"
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          terraform apply -auto-approve -no-color tfplan
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: "Terraform Output - ${{ matrix.terraform-dir }}"
+        run: |
+          cd ${{ matrix.terraform-dir }}
+          echo "## Terraform Outputs for ${{ matrix.terraform-dir }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          terraform output -no-color >> $GITHUB_STEP_SUMMARY
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  notify:
+    name: "Notify on Status"
+    needs: [apply]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: "Final Status"
+        run: |
+          if [ "${{ needs.apply.result }}" == "success" ]; then
+            echo "✅ Terraform apply completed successfully!"
+          else
+            echo "❌ Terraform apply failed!"
+            exit 1
+          fi
