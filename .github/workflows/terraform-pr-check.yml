@@ -50,58 +50,23 @@ jobs:
           terraform validate -no-color
         continue-on-error: true
 
-      - name: "Terraform Plan - ${{ matrix.terraform-dir }}"
-        id: plan
-        run: |
-          cd ${{ matrix.terraform-dir }}
-          # Use tfvars.example as default, real values come from environment
-          if [ -f terraform.tfvars ]; then
-            terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
-          else
-            # For PR preview, we can't actually plan without real AWS credentials
-            echo "Note: terraform.tfvars not found. Real AWS credentials needed for actual plan."
-            terraform plan -no-color 2>&1 | tee plan_output.txt || true
-          fi
-        env:
-          # These will be empty in PR context, but that's OK for structure validation
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        continue-on-error: true
-
-      - name: Plan Output
-        if: steps.plan.outcome == 'success' || steps.plan.outcome == 'failure'
-        run: |
-          cd ${{ matrix.terraform-dir }}
-          if [ -f plan_output.txt ]; then
-            cat plan_output.txt
-          fi
-
       - name: Comment PR - Check Results
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
             const dir = '${{ matrix.terraform-dir }}';
             let output = `## Terraform Check: ${dir}\n\n`;
             
             const fmtStatus = '${{ steps.fmt.outcome }}';
             const initStatus = '${{ steps.init.outcome }}';
             const validateStatus = '${{ steps.validate.outcome }}';
-            const planStatus = '${{ steps.plan.outcome }}';
             
             output += `| Check | Status |\n`;
             output += `|-------|--------|\n`;
             output += `| Format | ${fmtStatus === 'success' ? '✅' : '❌'} |\n`;
             output += `| Init | ${initStatus === 'success' ? '✅' : '❌'} |\n`;
             output += `| Validate | ${validateStatus === 'success' ? '✅' : '❌'} |\n`;
-            output += `| Plan | ${planStatus === 'success' ? '✅' : '❌'} |\n`;
-            
-            if (fs.existsSync(`${dir}/plan_output.txt`)) {
-              const planOutput = fs.readFileSync(`${dir}/plan_output.txt`, 'utf8');
-              const lines = planOutput.split('\n').slice(-20);
-              output += `\n### Plan Output\n\`\`\`\n${lines.join('\n')}\n\`\`\`\n`;
-            }
             
             // Find or delete existing comment
             const { data: comments } = await github.rest.issues.listComments({

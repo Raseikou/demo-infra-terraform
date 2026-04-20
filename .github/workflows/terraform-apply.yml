@@ -82,9 +82,6 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      # Require approval from specific users/teams
-      reviewers:
-        - ${{ github.actor }}
     steps:
       - name: "Approval Information"
         run: |
