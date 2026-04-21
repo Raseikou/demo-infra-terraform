@@ -13,7 +13,6 @@ permissions:
 
 env:
   TF_VERSION: 1.5.0
-  TERRAFORM_DIRS: "backend practice-06"
 
 jobs:
   terraform-check:
@@ -23,11 +22,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Detect Terraform directories changed in PR
+        id: changed-dirs
+        shell: bash
+        run: |
+          mapfile -t changed_files < <(
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}"
+          )
+
+          dirs=()
+          for file in "${changed_files[@]}"; do
+            case "$file" in
+              backend/*)
+                if [[ ! " ${dirs[*]} " =~ " backend " ]]; then
+                  dirs+=("backend")
+                fi
+                ;;
+              practice-06/*)
+                if [[ ! " ${dirs[*]} " =~ " practice-06 " ]]; then
+                  dirs+=("practice-06")
+                fi
+                ;;
+            esac
+          done
+
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "dirs=" >> "$GITHUB_OUTPUT"
+          else
+            printf 'dirs=%s\n' "${dirs[*]}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run Terraform checks
         id: checks
@@ -37,15 +70,27 @@ jobs:
 
           report_file="$RUNNER_TEMP/terraform-pr-check.md"
           fail=0
+          dirs="${{ steps.changed-dirs.outputs.dirs }}"
 
           {
             echo "## Terraform PR Check"
             echo ""
-            echo "| Directory | Format | Init | Validate |"
-            echo "|---|---|---|---|"
           } > "$report_file"
 
-          for dir in $TERRAFORM_DIRS; do
+          if [ -z "$dirs" ]; then
+            {
+              echo "No Terraform directories were changed in this PR."
+              echo ""
+              echo "Skipping format, init, and validate checks."
+            } >> "$report_file"
+          else
+            {
+              echo "| Directory | Format | Init | Validate |"
+              echo "|---|---|---|---|"
+            } >> "$report_file"
+          fi
+
+          for dir in $dirs; do
             fmt_status="success"
             init_status="success"
             validate_status="success"
