@@ -5,8 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "practice-04/**"
-      - "practice-05/**"
+      - "practice-06/**"
       - ".github/workflows/terraform-apply.yml"
 
 permissions:
@@ -26,7 +25,7 @@ jobs:
       plan_files: ${{ steps.plan.outputs.files }}
     strategy:
       matrix:
-        terraform-dir: [practice-04, practice-05]
+        terraform-dir: [practice-06]
       max-parallel: 1
 
     steps:
@@ -96,7 +95,7 @@ jobs:
     if: success()
     strategy:
       matrix:
-        terraform-dir: [practice-04, practice-05]
+        terraform-dir: [practice-06]
       max-parallel: 1
 
     steps:
