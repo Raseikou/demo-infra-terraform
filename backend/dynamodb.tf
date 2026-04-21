@@ -1,10 +1,10 @@
 # DynamoDB Table for Terraform state locking
 resource "aws_dynamodb_table" "terraform_lock" {
-  name             = var.state_lock_table_name
-  hash_key         = "LockID"
-  billing_mode     = var.state_lock_capacity == 0 ? "PAY_PER_REQUEST" : "PROVISIONED"
-  read_capacity    = var.state_lock_capacity == 0 ? null : 5
-  write_capacity   = var.state_lock_capacity == 0 ? null : 5
+  name           = var.state_lock_table_name
+  hash_key       = "LockID"
+  billing_mode   = var.state_lock_capacity == 0 ? "PAY_PER_REQUEST" : "PROVISIONED"
+  read_capacity  = var.state_lock_capacity == 0 ? null : 5
+  write_capacity = var.state_lock_capacity == 0 ? null : 5
 
   attribute {
     name = "LockID"
