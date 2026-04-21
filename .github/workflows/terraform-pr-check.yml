@@ -3,103 +3,225 @@ name: "Terraform PR Check"
 on:
   pull_request:
     paths:
-      - "practice-04/**"
-      - "practice-05/**"
+      - "backend/**"
+      - "practice-06/**"
       - ".github/workflows/terraform-pr-check.yml"
 
 permissions:
   contents: read
   pull-requests: write
 
+env:
+  TF_VERSION: 1.5.0
+
 jobs:
   terraform-check:
     name: "Terraform Format & Validate"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        terraform-dir: [practice-04, practice-05]
-      max-parallel: 1
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.5.0
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: "Terraform Format Check - ${{ matrix.terraform-dir }}"
-        id: fmt
+      - name: Detect Terraform directories changed in PR
+        id: changed-dirs
+        shell: bash
         run: |
-          cd ${{ matrix.terraform-dir }}
-          terraform fmt -check -recursive -diff 2>&1 || { echo "FAILURE=true" >> $GITHUB_ENV; }
-        continue-on-error: true
+          mapfile -t changed_files < <(
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}"
+          )
 
-      - name: "Terraform Init - ${{ matrix.terraform-dir }}"
-        id: init
+          dirs=()
+          for file in "${changed_files[@]}"; do
+            case "$file" in
+              backend/*)
+                if [[ ! " ${dirs[*]} " =~ " backend " ]]; then
+                  dirs+=("backend")
+                fi
+                ;;
+              practice-06/*)
+                if [[ ! " ${dirs[*]} " =~ " practice-06 " ]]; then
+                  dirs+=("practice-06")
+                fi
+                ;;
+            esac
+          done
+
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "dirs=" >> "$GITHUB_OUTPUT"
+          else
+            printf 'dirs=%s\n' "${dirs[*]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Terraform checks
+        id: checks
+        shell: bash
         run: |
-          cd ${{ matrix.terraform-dir }}
-          terraform init -backend=false -no-color
-        continue-on-error: true
+          set +e
 
-      - name: "Terraform Validate - ${{ matrix.terraform-dir }}"
-        id: validate
-        run: |
-          cd ${{ matrix.terraform-dir }}
-          terraform validate -no-color
-        continue-on-error: true
+          report_file="$RUNNER_TEMP/terraform-pr-check.md"
+          fail=0
+          dirs="${{ steps.changed-dirs.outputs.dirs }}"
 
-      - name: Comment PR - Check Results
+          {
+            echo "## Terraform PR Check"
+            echo ""
+          } > "$report_file"
+
+          if [ -z "$dirs" ]; then
+            {
+              echo "No Terraform directories were changed in this PR."
+              echo ""
+              echo "Skipping format, init, and validate checks."
+            } >> "$report_file"
+          else
+            {
+              echo "| Directory | Format | Init | Validate |"
+              echo "|---|---|---|---|"
+            } >> "$report_file"
+          fi
+
+          for dir in $dirs; do
+            fmt_status="success"
+            init_status="success"
+            validate_status="success"
+            validate_output=""
+            validate_exit=0
+
+            fmt_output=$(cd "$dir" && terraform fmt -check -recursive -diff 2>&1)
+            fmt_exit=$?
+            if [ $fmt_exit -ne 0 ]; then
+              fmt_status="failed"
+              fail=1
+            fi
+
+            init_output=$(cd "$dir" && terraform init -backend=false -no-color 2>&1)
+            init_exit=$?
+            if [ $init_exit -ne 0 ]; then
+              init_status="failed"
+              fail=1
+            fi
+
+            if [ $init_exit -eq 0 ]; then
+              validate_output=$(cd "$dir" && terraform validate -no-color 2>&1)
+              validate_exit=$?
+              if [ $validate_exit -ne 0 ]; then
+                validate_status="failed"
+                fail=1
+              fi
+            else
+              validate_status="skipped"
+            fi
+
+            fmt_icon="✅"
+            [ "$fmt_status" = "failed" ] && fmt_icon="❌"
+            init_icon="✅"
+            [ "$init_status" = "failed" ] && init_icon="❌"
+            validate_icon="✅"
+            [ "$validate_status" = "failed" ] && validate_icon="❌"
+            [ "$validate_status" = "skipped" ] && validate_icon="⏭️"
+
+            {
+              echo "| \`$dir\` | $fmt_icon | $init_icon | $validate_icon |"
+              echo ""
+            } >> "$report_file"
+
+            if [ $fmt_exit -ne 0 ]; then
+              {
+                echo "<details><summary><code>$dir</code> format output</summary>"
+                echo ""
+                echo '```text'
+                echo "$fmt_output"
+                echo '```'
+                echo "</details>"
+                echo ""
+              } >> "$report_file"
+            fi
+
+            if [ $init_exit -ne 0 ]; then
+              {
+                echo "<details><summary><code>$dir</code> init output</summary>"
+                echo ""
+                echo '```text'
+                echo "$init_output"
+                echo '```'
+                echo "</details>"
+                echo ""
+              } >> "$report_file"
+            fi
+
+            if [ $validate_exit -ne 0 ]; then
+              {
+                echo "<details><summary><code>$dir</code> validate output</summary>"
+                echo ""
+                echo '```text'
+                echo "$validate_output"
+                echo '```'
+                echo "</details>"
+                echo ""
+              } >> "$report_file"
+            fi
+          done
+
+          if [ $fail -eq 0 ]; then
+            echo "All Terraform checks passed." >> "$report_file"
+          else
+            echo "One or more Terraform checks failed." >> "$report_file"
+          fi
+
+          {
+            echo "report_path=$report_file"
+            echo "has_failures=$fail"
+          } >> "$GITHUB_OUTPUT"
+
+          cat "$report_file" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $fail -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Comment PR with results
         if: always()
         uses: actions/github-script@v7
+        env:
+          REPORT_PATH: ${{ steps.checks.outputs.report_path }}
         with:
           script: |
-            const dir = '${{ matrix.terraform-dir }}';
-            let output = `## Terraform Check: ${dir}\n\n`;
-            
-            const fmtStatus = '${{ steps.fmt.outcome }}';
-            const initStatus = '${{ steps.init.outcome }}';
-            const validateStatus = '${{ steps.validate.outcome }}';
-            
-            output += `| Check | Status |\n`;
-            output += `|-------|--------|\n`;
-            output += `| Format | ${fmtStatus === 'success' ? '✅' : '❌'} |\n`;
-            output += `| Init | ${initStatus === 'success' ? '✅' : '❌'} |\n`;
-            output += `| Validate | ${validateStatus === 'success' ? '✅' : '❌'} |\n`;
-            
-            // Find or delete existing comment
+            const fs = require('fs');
+            const marker = '<!-- terraform-pr-check -->';
+            const body = `${marker}\n${fs.readFileSync(process.env.REPORT_PATH, 'utf8')}`;
+
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const existingComment = comments.find(comment => 
-              comment.user.type === 'Bot' && comment.body.includes(`Terraform Check: ${dir}`)
+
+            const existingComment = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
             );
-            
+
             if (existingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 comment_id: existingComment.id,
-                body: output
+                body,
               });
             } else {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: output
+                body,
               });
             }
-
-      - name: Fail if checks failed
-        if: always()
-        run: |
-          if [ "${{ steps.fmt.outcome }}" != "success" ] || \
-             [ "${{ steps.validate.outcome }}" != "success" ]; then
-            echo "Terraform checks failed!"
-            exit 1
-          fi

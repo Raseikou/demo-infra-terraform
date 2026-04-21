@@ -6,11 +6,14 @@ on:
       - main
     paths:
       - "practice-06/**"
-      - ".github/workflows/terraform-apply.yml"
 
 permissions:
   contents: read
   pull-requests: read
+
+env:
+  AWS_REGION: ap-northeast-1
+  TF_VERSION: 1.5.0
 
 # Ensure only one apply runs at a time
 concurrency:
@@ -18,8 +21,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: "Check Backend Configuration"
+    runs-on: ubuntu-latest
+    outputs:
+      backend_ready: ${{ steps.check.outputs.backend_ready }}
+
+    steps:
+      - name: Verify required repository variables
+        id: check
+        shell: bash
+        run: |
+          missing_vars=()
+
+          [ -n "${{ vars.TF_STATE_BUCKET }}" ] || missing_vars+=("TF_STATE_BUCKET")
+          [ -n "${{ vars.TF_LOCK_TABLE }}" ] || missing_vars+=("TF_LOCK_TABLE")
+          [ -n "${{ vars.TF_STATE_KMS_KEY_ARN }}" ] || missing_vars+=("TF_STATE_KMS_KEY_ARN")
+
+          if [ ${#missing_vars[@]} -eq 0 ]; then
+            echo "backend_ready=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Backend configuration check"
+              echo ""
+              echo "Backend repository variables are configured. Terraform apply can proceed."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "backend_ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Backend configuration check"
+              echo ""
+              echo "Terraform apply is skipped because backend setup is not finished."
+              echo ""
+              echo "Missing repository variables:"
+              for var_name in "${missing_vars[@]}"; do
+                echo "- \`$var_name\`"
+              done
+              echo ""
+              echo "Run \`Backend Setup (One-Time Initialization)\` on \`main\`, then add the outputs as repository variables."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   plan:
     name: "Terraform Plan for Apply"
+    needs: preflight
+    if: needs.preflight.outputs.backend_ready == 'true'
     runs-on: ubuntu-latest
     outputs:
       plan_files: ${{ steps.plan.outputs.files }}
@@ -35,20 +80,24 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.5.0
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: "Terraform Format Check - ${{ matrix.terraform-dir }}"
         run: |
           cd ${{ matrix.terraform-dir }}
           terraform fmt -check -recursive
-
       - name: "Terraform Init - ${{ matrix.terraform-dir }}"
         run: |
           cd ${{ matrix.terraform-dir }}
-          terraform init -no-color
+          terraform init -no-color \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+            -backend-config="kms_key_id=${{ vars.TF_STATE_KMS_KEY_ARN }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: "Terraform Validate - ${{ matrix.terraform-dir }}"
         run: |
@@ -78,6 +127,7 @@ jobs:
   approval:
     name: "Manual Approval Required"
     needs: plan
+    if: needs.plan.result == 'success'
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -90,9 +140,9 @@ jobs:
 
   apply:
     name: "Terraform Apply"
-    needs: [plan, approval]
+    needs: [preflight, plan, approval]
     runs-on: ubuntu-latest
-    if: success()
+    if: needs.preflight.outputs.backend_ready == 'true' && success()
     strategy:
       matrix:
         terraform-dir: [practice-06]
@@ -105,21 +155,25 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.5.0
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Download Plan Artifact
         uses: actions/download-artifact@v4
         with:
           name: tfplan-${{ matrix.terraform-dir }}
           path: ${{ matrix.terraform-dir }}/
-
       - name: "Terraform Init - ${{ matrix.terraform-dir }}"
         run: |
           cd ${{ matrix.terraform-dir }}
-          terraform init -no-color
+          terraform init -no-color \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+            -backend-config="kms_key_id=${{ vars.TF_STATE_KMS_KEY_ARN }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: "Terraform Apply - ${{ matrix.terraform-dir }}"
         run: |
@@ -128,6 +182,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: "Terraform Output - ${{ matrix.terraform-dir }}"
         run: |
@@ -138,16 +193,19 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
   notify:
     name: "Notify on Status"
-    needs: [apply]
+    needs: [preflight, apply]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: "Final Status"
         run: |
-          if [ "${{ needs.apply.result }}" == "success" ]; then
+          if [ "${{ needs.preflight.outputs.backend_ready }}" != "true" ]; then
+            echo "ℹ️ Terraform apply was skipped because backend configuration is not ready yet."
+          elif [ "${{ needs.apply.result }}" == "success" ]; then
             echo "✅ Terraform apply completed successfully!"
           else
             echo "❌ Terraform apply failed!"

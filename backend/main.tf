@@ -81,8 +81,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
     }
 
     noncurrent_version_transition {
-      noncurrent_days          = 30
-      storage_class            = "STANDARD_IA"
+      noncurrent_days = 30
+      storage_class   = "STANDARD_IA"
     }
   }
 
@@ -109,7 +109,7 @@ resource "aws_s3_bucket_policy" "terraform_state" {
         Principal = {
           AWS = "*"
         }
-        Action = "s3:PutObject"
+        Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.terraform_state.arn}/*"
         Condition = {
           StringNotEquals = {

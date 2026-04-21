@@ -1,0 +1,91 @@
+name: "Backend Setup (One-Time Initialization)"
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+env:
+  AWS_REGION: ap-northeast-1
+  TF_VERSION: 1.5.0
+
+jobs:
+  backend:
+    name: "Initialize Terraform Backend"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: ./backend
+
+      - name: Terraform Init
+        run: terraform init -upgrade
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./backend
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -no-color
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Output Backend Configuration
+        id: backend
+        run: |
+          terraform output -json backend_config > backend_config.json
+          S3_BUCKET=$(terraform output -raw s3_bucket_name)
+          DYNAMODB_TABLE=$(terraform output -raw dynamodb_table_name)
+          KMS_KEY_ARN=$(terraform output -raw kms_key_arn)
+          
+          echo "s3_bucket=${S3_BUCKET}" >> $GITHUB_OUTPUT
+          echo "dynamodb_table=${DYNAMODB_TABLE}" >> $GITHUB_OUTPUT
+          echo "kms_key_arn=${KMS_KEY_ARN}" >> $GITHUB_OUTPUT
+        working-directory: ./backend
+
+      - name: Display Backend Information
+        run: |
+          {
+            echo "## Backend Infrastructure Initialized Successfully"
+            echo ""
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| S3 Bucket | \`${{ steps.backend.outputs.s3_bucket }}\` |"
+            echo "| DynamoDB Table | \`${{ steps.backend.outputs.dynamodb_table }}\` |"
+            echo "| KMS Key ARN | \`${{ steps.backend.outputs.kms_key_arn }}\` |"
+            echo ""
+            echo "Set these GitHub repository variables before running \`terraform-apply\`:"
+            echo ""
+            echo "- \`TF_STATE_BUCKET=${{ steps.backend.outputs.s3_bucket }}\`"
+            echo "- \`TF_LOCK_TABLE=${{ steps.backend.outputs.dynamodb_table }}\`"
+            echo "- \`TF_STATE_KMS_KEY_ARN=${{ steps.backend.outputs.kms_key_arn }}\`"
+            echo ""
+            echo "AWS credentials should stay in repository secrets:"
+            echo ""
+            echo "- \`AWS_ACCESS_KEY_ID\`"
+            echo "- \`AWS_SECRET_ACCESS_KEY\`"
+          } >> "$GITHUB_STEP_SUMMARY"
