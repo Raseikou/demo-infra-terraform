@@ -31,7 +31,6 @@ resource "aws_dynamodb_table" "terraform_lock" {
 
 # TTL for old lock records (optional cleanup)
 resource "aws_dynamodb_ttl" "terraform_lock" {
-  name           = "ExpirationTime"
   attribute_name = "ExpirationTime"
   table_name     = aws_dynamodb_table.terraform_lock.name
 
