@@ -8,8 +8,9 @@ terraform {
     }
   }
 
-  # Backend 配置本身使用本地 state
-  # 只有一次性体系设置
+  # Provider requirements only.
+  # The backend stack now stores its own state via backend/backend.tf using
+  # the shared S3 bucket with a dedicated key.
 }
 
 provider "aws" {

@@ -33,16 +33,9 @@ output "cicd_user_name" {
   description = "IAM user name for CI/CD"
 }
 
-output "cicd_access_key_id" {
-  value       = aws_iam_access_key.terraform_cicd.id
-  description = "CI/CD IAM user access key ID"
-  sensitive   = true
-}
-
-output "cicd_secret_access_key" {
-  value       = aws_iam_access_key.terraform_cicd.secret
-  description = "CI/CD IAM user secret access key"
-  sensitive   = true
+output "backend_state_key" {
+  value       = "backend/bootstrap.tfstate"
+  description = "Remote state key used by the backend stack itself"
 }
 
 output "backend_config" {

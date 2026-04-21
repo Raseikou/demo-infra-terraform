@@ -20,13 +20,14 @@ jobs:
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
         working-directory: ./backend
 
       - name: Terraform Init
-        run: terraform init -upgrade
+        run: terraform init -backend=false -upgrade
         working-directory: ./backend
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -54,13 +55,24 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      - name: Upload Backend State Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-bootstrap-state
+          path: |
+            backend/terraform.tfstate
+            backend/terraform.tfstate.backup
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Output Backend Configuration
         id: backend
         run: |
-          terraform output -json backend_config > backend_config.json
-          S3_BUCKET=$(terraform output -raw s3_bucket_name)
-          DYNAMODB_TABLE=$(terraform output -raw dynamodb_table_name)
-          KMS_KEY_ARN=$(terraform output -raw kms_key_arn)
+          terraform output -json > backend_outputs.json
+          S3_BUCKET=$(jq -r '.s3_bucket_name.value' backend_outputs.json)
+          DYNAMODB_TABLE=$(jq -r '.dynamodb_table_name.value' backend_outputs.json)
+          KMS_KEY_ARN=$(jq -r '.kms_key_arn.value' backend_outputs.json)
           
           echo "s3_bucket=${S3_BUCKET}" >> $GITHUB_OUTPUT
           echo "dynamodb_table=${DYNAMODB_TABLE}" >> $GITHUB_OUTPUT
@@ -83,6 +95,9 @@ jobs:
             echo "- \`TF_STATE_BUCKET=${{ steps.backend.outputs.s3_bucket }}\`"
             echo "- \`TF_LOCK_TABLE=${{ steps.backend.outputs.dynamodb_table }}\`"
             echo "- \`TF_STATE_KMS_KEY_ARN=${{ steps.backend.outputs.kms_key_arn }}\`"
+            echo ""
+            echo "Next, run \`Backend State Recovery\` to move the backend stack itself"
+            echo "under remote state at \`backend/bootstrap.tfstate\`."
             echo ""
             echo "AWS credentials should stay in repository secrets:"
             echo ""

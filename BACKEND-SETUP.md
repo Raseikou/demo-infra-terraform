@@ -2,10 +2,15 @@
 
 本项目使用企业级 Terraform 后端架构，所有 state 文件持久化存储在 S3，支持版本管理、加密和并发锁定。
 
+当前分成两个 state 层级：
+
+- `backend/` → `backend/bootstrap.tfstate`
+- `practice-06/` → `practice-06/terraform.tfstate`
+
 ## 🏗️ 架构设计
 
 ```
-Backend Infrastructure (创建一次)
+Backend Infrastructure (创建一次，然后接管到远程 state)
 ├── S3 Bucket (state 存储)
 │   ├── KMS 加密
 │   ├── 版本控制 (90天保留)
@@ -42,13 +47,15 @@ Practice-06 (应用部署)
 5. 保持默认设置，点击绿色 "Run workflow"
 6. 等待工作流完成（约 2-3 分钟）
 
+这个 workflow 会先用临时本地 state 完成 bootstrap，并上传 `backend-bootstrap-state` artifact 作为保护网。
+
 **方案 B: 本地手动部署**
 
 ```bash
 cd backend
 
 # 初始化
-terraform init
+terraform init -backend=false
 
 # 查看计划
 terraform plan
@@ -60,7 +67,22 @@ terraform apply
 terraform output
 ```
 
-### Step 2: 获取 Backend 配置信息
+### Step 2: 将 backend/ 自身接管到远程 State
+
+⚠️ **重要**: 这一步专门解决 backend bootstrap 完成后 state 还在 runner 本地的问题。
+
+1. 先在 GitHub 仓库中设置 repository variables：
+   - `TF_STATE_BUCKET`
+   - `TF_LOCK_TABLE`
+   - `TF_STATE_KMS_KEY_ARN`
+2. 进入 **Actions**
+3. 运行 `Backend State Recovery`
+4. 工作流会：
+   - 以 `backend/bootstrap.tfstate` 初始化远程 backend
+   - 导入现有的 S3 / DynamoDB / KMS / IAM user 资源
+   - 执行一次 `terraform apply`，把剩余配置同步到远程 state
+
+### Step 3: 获取 Backend 配置信息
 
 工作流完成后，查看日志中的输出，记录以下信息：
 
@@ -68,29 +90,6 @@ terraform output
 S3 Bucket:        demo-infra-terraform-state-123456789012
 DynamoDB Table:   terraform-state-lock
 KMS Key ARN:      arn:aws:kms:ap-northeast-1:123456789012:key/12345678-1234-1234-1234-123456789012
-```
-
-### Step 3: 更新 practice-06 Backend 配置
-
-编辑 `practice-06/backend.tf`：
-
-```hcl
-backend "s3" {
-  bucket         = "demo-infra-terraform-state-123456789012"  # ← 替换 ACCOUNT_ID
-  key            = "practice-06/terraform.tfstate"
-  region         = "ap-northeast-1"
-  encrypt        = true
-  dynamodb_table = "terraform-state-lock"
-  kms_key_id     = "arn:aws:kms:ap-northeast-1:123456789012:key/12345678-1234-1234-1234-123456789012"
-}
-```
-
-然后提交并推送：
-
-```bash
-git add practice-06/backend.tf
-git commit -m "Configure backend for practice-06"
-git push origin main
 ```
 
 ### Step 4: 自动部署 Practice-06
@@ -110,10 +109,12 @@ git push origin main
 
 ```bash
 # 列出 S3 中的 state 文件
+aws s3 ls s3://demo-infra-terraform-state-123456789012/backend/
 aws s3 ls s3://demo-infra-terraform-state-123456789012/practice-06/
 
 # 输出应显示：
-# 2026-04-21 10:30:45       12345 practice-06/terraform.tfstate
+# 2026-04-21 10:30:45       12345 backend/bootstrap.tfstate
+# 2026-04-21 10:31:02       12345 practice-06/terraform.tfstate
 
 # 查看 state 版本
 aws s3api list-object-versions \
@@ -189,11 +190,12 @@ terraform state rm aws_instance.web
 
 ```
 backend/                          # Backend 基础设施代码
+├── backend.tf                    # backend/ 自己的远程 state key
 ├── terraform.tf                  # Provider 和默认标签配置
 ├── main.tf                       # S3 bucket + logging + lifecycle
 ├── kms.tf                        # KMS 密钥和策略
 ├── dynamodb.tf                   # State locking table
-├── iam.tf                        # CI/CD IAM 用户和权限
+├── iam.tf                        # CI/CD IAM 用户和权限（不含 access key）
 ├── variables.tf                  # 可配置参数
 ├── terraform.tfvars              # 默认值
 └── outputs.tf                    # 导出配置信息
@@ -207,6 +209,7 @@ practice-06/                      # 应用部署示例
 
 .github/workflows/
 ├── backend-init.yml              # 一次性初始化 backend
+├── backend-state-recovery.yml    # 将 backend/ 接管到远程 state
 ├── terraform-pr-check.yml        # PR 代码检查 (fmt + validate)
 └── terraform-apply.yml           # 自动部署 practice-06
 ```
@@ -252,17 +255,8 @@ aws s3api get-object --bucket demo-infra-terraform-state-xxx \
 aws s3 cp state.backup s3://demo-infra-terraform-state-xxx/practice-06/terraform.tfstate
 ```
 
-### Q: CI/CD 用户的 Access Key 泄漏了怎么办？
-**A**: 立即删除并重新创建：
-```bash
-# 删除旧 key
-terraform destroy -target="aws_iam_access_key.terraform_cicd"
-
-# 重新应用生成新 key
-terraform apply
-
-# 更新 GitHub Secrets
-```
+### Q: 为什么 Terraform 不再管理 IAM Access Key？
+**A**: Access key 的 secret 只会在创建时显示一次。把它放进 Terraform state 会让 runner 失败后的 state recovery 变得很脆弱。当前方案只管理 IAM user 和权限，实际 key 保存在 GitHub Secrets 中，按需在 AWS IAM 控制台手动轮换即可。
 
 ---
 

@@ -91,13 +91,8 @@ resource "aws_iam_user_policy" "terraform_kms_policy" {
   policy = data.aws_iam_policy_document.terraform_kms_policy.json
 }
 
-# Create access key for CI/CD
-resource "aws_iam_access_key" "terraform_cicd" {
-  user = aws_iam_user.terraform_cicd.name
-
-  depends_on = [
-    aws_iam_user_policy.terraform_s3_policy,
-    aws_iam_user_policy.terraform_dynamodb_policy,
-    aws_iam_user_policy.terraform_kms_policy
-  ]
-}
+# Access keys are intentionally managed outside Terraform.
+# The secret access key is only visible once at creation time, which makes
+# state recovery brittle after a failed runner-based bootstrap. We keep the
+# IAM user and inline policies in Terraform, and store the actual credentials
+# in GitHub Actions secrets.
