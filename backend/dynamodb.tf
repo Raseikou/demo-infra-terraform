@@ -15,6 +15,11 @@ resource "aws_dynamodb_table" "terraform_lock" {
     enabled = true
   }
 
+  ttl {
+    attribute_name = "ExpirationTime"
+    enabled        = true
+  }
+
   server_side_encryption {
     enabled     = true
     kms_key_arn = aws_kms_key.terraform_state.arn
@@ -27,12 +32,4 @@ resource "aws_dynamodb_table" "terraform_lock" {
   lifecycle {
     prevent_destroy = true
   }
-}
-
-# TTL for old lock records (optional cleanup)
-resource "aws_dynamodb_ttl" "terraform_lock" {
-  attribute_name = "ExpirationTime"
-  table_name     = aws_dynamodb_table.terraform_lock.name
-
-  enabled = true
 }
