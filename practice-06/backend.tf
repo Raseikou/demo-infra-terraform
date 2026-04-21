@@ -1,6 +1,6 @@
 terraform {
   required_version = ">= 1.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -9,16 +9,14 @@ terraform {
   }
 
   # S3 Backend Configuration
-  # Backend infrastructure must be created first using ./backend directory
+  # Backend infrastructure must be created first using ./backend directory.
+  # The actual bucket / lock table / KMS key values are injected at
+  # `terraform init` time so account-specific settings do not need to live
+  # in the repository.
   backend "s3" {
-    # These values will be populated by backend/ terraform apply
-    # Update these values after running: terraform -chdir=./backend apply
-    bucket         = "demo-infra-terraform-state-ACCOUNT_ID"  # Replace ACCOUNT_ID with your AWS account ID
-    key            = "practice-06/terraform.tfstate"
-    region         = "ap-northeast-1"
-    encrypt        = true
-    dynamodb_table = "terraform-state-lock"
-    kms_key_id     = "arn:aws:kms:ap-northeast-1:ACCOUNT_ID:key/KEY_ID"  # Replace after backend creation
+    key     = "practice-06/terraform.tfstate"
+    region  = "ap-northeast-1"
+    encrypt = true
   }
 }
 

@@ -1,12 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "5.0.0"
-    }
-  }
-}
-
 # Security Group (uses default VPC)
 resource "aws_security_group" "app_sg" {
   name        = "${var.app_name}-sg"
