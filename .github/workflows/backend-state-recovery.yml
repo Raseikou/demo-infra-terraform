@@ -1,0 +1,116 @@
+name: "Backend State Recovery"
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-1
+  TF_VERSION: 1.5.0
+  PROJECT_NAME: demo-infra
+
+jobs:
+  recover:
+    name: "Adopt Existing Backend Resources into Remote State"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Verify backend repository variables
+        shell: bash
+        run: |
+          test -n "${{ vars.TF_STATE_BUCKET }}" || (echo "Missing repository variable: TF_STATE_BUCKET" && exit 1)
+          test -n "${{ vars.TF_LOCK_TABLE }}" || (echo "Missing repository variable: TF_LOCK_TABLE" && exit 1)
+          test -n "${{ vars.TF_STATE_KMS_KEY_ARN }}" || (echo "Missing repository variable: TF_STATE_KMS_KEY_ARN" && exit 1)
+
+      - name: Initialize backend stack with remote state
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          terraform init -reconfigure -no-color \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+            -backend-config="kms_key_id=${{ vars.TF_STATE_KMS_KEY_ARN }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Import existing backend resources
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+          STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          LOG_BUCKET="${PROJECT_NAME}-terraform-state-logs-${ACCOUNT_ID}"
+          LOCK_TABLE="${{ vars.TF_LOCK_TABLE }}"
+          KMS_KEY_ARN="${{ vars.TF_STATE_KMS_KEY_ARN }}"
+          KMS_ALIAS="alias/${PROJECT_NAME}-terraform-state"
+          IAM_USER="${PROJECT_NAME}-terraform-cicd"
+
+          import_if_missing() {
+            local address="$1"
+            local id="$2"
+
+            if terraform state show "$address" >/dev/null 2>&1; then
+              echo "Already in state: $address"
+            else
+              echo "Importing $address"
+              terraform import -no-color "$address" "$id"
+            fi
+          }
+
+          import_if_missing "aws_kms_key.terraform_state" "$KMS_KEY_ARN"
+          import_if_missing "aws_kms_alias.terraform_state" "$KMS_ALIAS"
+          import_if_missing "aws_s3_bucket.terraform_state" "$STATE_BUCKET"
+          import_if_missing "aws_s3_bucket.terraform_state_logs" "$LOG_BUCKET"
+          import_if_missing "aws_dynamodb_table.terraform_lock" "$LOCK_TABLE"
+          import_if_missing "aws_iam_user.terraform_cicd" "$IAM_USER"
+
+      - name: Reconcile backend configuration into remote state
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: terraform apply -auto-approve -no-color
+
+      - name: Show recovered backend outputs
+        working-directory: ./backend
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          {
+            echo "## Backend State Recovery Complete"
+            echo ""
+            echo "The backend stack is now stored at:"
+            echo ""
+            echo "- bucket: \`${{ vars.TF_STATE_BUCKET }}\`"
+            echo "- key: \`backend/bootstrap.tfstate\`"
+            echo "- lock table: \`${{ vars.TF_LOCK_TABLE }}\`"
+            echo ""
+            terraform output -json | jq -r '
+              [
+                "| Output | Value |",
+                "|---|---|",
+                "| s3_bucket_name | `\(.s3_bucket_name.value)` |",
+                "| dynamodb_table_name | `\(.dynamodb_table_name.value)` |",
+                "| kms_key_arn | `\(.kms_key_arn.value)` |",
+                "| backend_state_key | `\(.backend_state_key.value)` |"
+              ] | .[]'
+          } >> "$GITHUB_STEP_SUMMARY"

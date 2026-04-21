@@ -22,15 +22,21 @@ Terraform infrastructure practice with GitHub Actions CI/CD pipeline and product
 ### For First-Time Setup
 
 1. **Initialize Terraform Backend** (one-time only)
-   - See [`BACKEND-SETUP.md`](BACKEND-SETUP.md) → "Step 1: Initialize Backend"
-   - Use GitHub Actions workflow or local deployment
+   - Run `Backend Setup (One-Time Initialization)`
+   - This creates S3 / DynamoDB / KMS / IAM resources using temporary local state
 
-2. **Configure practice-06**
-   - Update `practice-06/backend.tf` with backend values
-   - Push to `main` branch
+2. **Adopt backend state into S3**
+   - Run `Backend State Recovery`
+   - This stores the `backend/` stack at `backend/bootstrap.tfstate`
 
-3. **Approve & Deploy**
-   - CI/CD auto-runs `terraform-apply` workflow
+3. **Set repository variables**
+   - `TF_STATE_BUCKET`
+   - `TF_LOCK_TABLE`
+   - `TF_STATE_KMS_KEY_ARN`
+
+4. **Approve & Deploy practice-06**
+   - Push `practice-06` changes to `main`
+   - CI/CD auto-runs `terraform-apply`
    - Approve in GitHub → resources deployed with persistent state
 
 ### For Development
@@ -59,6 +65,7 @@ git push origin feature/your-feature
 - **State Locking** - DynamoDB prevents concurrent modifications
 - **Access Logging** - Audit trail for all S3 operations
 - **IAM Least Privilege** - CI/CD user has minimal required permissions
+- **State Layering** - `backend/` and `practice-06/` use separate S3 state keys
 
 ## 📚 Documentation
 
@@ -70,11 +77,17 @@ git push origin feature/your-feature
 ## 🔄 CI/CD Pipeline
 
 ```
-Push to GitHub
+PR opened
     ↓
-PR triggered → terraform-pr-check (format + validate)
-    ↓ Merge to main
-Push to main → terraform-apply (plan + manual approval + apply)
+terraform-pr-check (fmt + init + validate for changed dirs)
+    ↓ Merge backend changes to main
+Backend Setup (bootstrap resources with local state)
+    ↓
+Backend State Recovery (adopt backend/ into S3 state)
+    ↓
+Push practice-06 changes to main
+    ↓
+terraform-apply (plan + approval + apply)
     ↓
 State persisted in S3 ✅
 ```
@@ -86,6 +99,12 @@ Configure these in GitHub Repository Settings → Secrets:
 - `AWS_REGION` - e.g., `ap-northeast-1`
 - `AWS_ACCESS_KEY_ID` - CI/CD IAM user credentials
 - `AWS_SECRET_ACCESS_KEY` - CI/CD IAM user credentials
+
+Configure these in GitHub Repository Settings → Variables:
+
+- `TF_STATE_BUCKET`
+- `TF_LOCK_TABLE`
+- `TF_STATE_KMS_KEY_ARN`
 
 ## 💡 Key Differences from Legacy Practice-04/05
 
@@ -100,9 +119,12 @@ Configure these in GitHub Repository Settings → Secrets:
 ## ⚠️ Important Notes
 
 - Backend Infrastructure is created once and shared by all practices
+- `backend/` state lives at `backend/bootstrap.tfstate`
+- `practice-06/` state lives at `practice-06/terraform.tfstate`
 - `terraform init` after any `backend.tf` changes
 - State files contain sensitive data (credentials, passwords) - keep S3 private
 - GitHub Actions runner is ephemeral; state persists only in S3
+- IAM access keys are stored in GitHub Secrets, not managed by Terraform state
 
 ## 🛠️ Troubleshooting
 
