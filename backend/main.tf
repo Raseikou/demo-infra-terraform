@@ -1,6 +1,6 @@
 data "aws_caller_identity" "current" {}
 
-# S3 Bucket for Terraform State
+# Terraform state 本体を保存する S3 バケット
 resource "aws_s3_bucket" "terraform_state" {
   bucket = "${var.project_name}-terraform-state-${data.aws_caller_identity.current.account_id}"
 
@@ -9,7 +9,7 @@ resource "aws_s3_bucket" "terraform_state" {
   }
 }
 
-# Block all public access
+# すべてのパブリックアクセスを遮断
 resource "aws_s3_bucket_public_access_block" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -19,7 +19,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
-# Enable versioning for state recovery
+# state 復旧用にバージョニングを有効化
 resource "aws_s3_bucket_versioning" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -29,7 +29,7 @@ resource "aws_s3_bucket_versioning" "terraform_state" {
   }
 }
 
-# Server-side encryption with KMS
+# KMS によるサーバーサイド暗号化
 resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -42,7 +42,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
   }
 }
 
-# Enable access logging
+# state バケットのアクセスログを別バケットに保存
 resource "aws_s3_bucket_logging" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -50,7 +50,7 @@ resource "aws_s3_bucket_logging" "terraform_state" {
   target_prefix = "access-logs/"
 }
 
-# Logging bucket
+# 監査用アクセスログの保存先バケット
 resource "aws_s3_bucket" "terraform_state_logs" {
   bucket = "${var.project_name}-terraform-state-logs-${data.aws_caller_identity.current.account_id}"
 
@@ -68,7 +68,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state_logs" {
   restrict_public_buckets = true
 }
 
-# Lifecycle policy to clean up old state versions
+# 古い state 世代や未完了 multipart upload を掃除する
 resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -96,7 +96,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
   }
 }
 
-# Bucket policy - restrict access
+# 暗号化と TLS 通信を必須化するバケットポリシー
 resource "aws_s3_bucket_policy" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -138,7 +138,7 @@ resource "aws_s3_bucket_policy" "terraform_state" {
   })
 }
 
-# Enable versioning for logging bucket
+# ログバケット側もバージョニングを有効化
 resource "aws_s3_bucket_versioning" "terraform_state_logs" {
   bucket = aws_s3_bucket.terraform_state_logs.id
 
@@ -147,7 +147,7 @@ resource "aws_s3_bucket_versioning" "terraform_state_logs" {
   }
 }
 
-# Lifecycle for logs bucket
+# ログバケットの保持期間を制御
 resource "aws_s3_bucket_lifecycle_configuration" "terraform_state_logs" {
   bucket = aws_s3_bucket.terraform_state_logs.id
 

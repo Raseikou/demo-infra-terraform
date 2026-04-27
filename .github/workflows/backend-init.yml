@@ -1,7 +1,7 @@
 name: "Backend Setup (One-Time Initialization)"
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch:  # 初回 bootstrap 用の手動実行
 
 env:
   AWS_REGION: ap-northeast-1
@@ -27,6 +27,7 @@ jobs:
         working-directory: ./backend
 
       - name: Terraform Init
+        # backend バケット自体をまだ作っていないので local state で初期化する
         run: terraform init -backend=false -upgrade
         working-directory: ./backend
         env:
@@ -59,6 +60,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          # bootstrap 中に作られた一時 state を保険として保存する
           name: backend-bootstrap-state
           path: |
             backend/terraform.tfstate
@@ -69,6 +71,7 @@ jobs:
       - name: Output Backend Configuration
         id: backend
         run: |
+          # wrapper を切って JSON をそのまま読み、GitHub output 汚染を防ぐ
           terraform output -json > backend_outputs.json
           S3_BUCKET=$(jq -r '.s3_bucket_name.value' backend_outputs.json)
           DYNAMODB_TABLE=$(jq -r '.dynamodb_table_name.value' backend_outputs.json)

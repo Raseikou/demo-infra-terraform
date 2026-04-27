@@ -8,9 +8,8 @@ terraform {
     }
   }
 
-  # Provider requirements only.
-  # The backend stack now stores its own state via backend/backend.tf using
-  # the shared S3 bucket with a dedicated key.
+  # ここでは Terraform 本体と provider の要件のみを定義します。
+  # backend 自身の remote state は `backend/backend.tf` 側で管理します。
 }
 
 provider "aws" {

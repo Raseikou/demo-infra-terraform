@@ -1,11 +1,9 @@
-# 这个目录用来初始化 S3 backend 和 DynamoDB table
-# 
-# 使用步骤：
-# 1. cd practice-06
-# 2. terraform init
-# 3. terraform apply
-# 4. 记录输出的 S3 bucket 名称
-# 5. 更新 backend.tf 中的 bucket 名称
-
-# 第一次运行时，terraform 会将 state 存储在本地
-# apply 完成后，手动迁移到 S3（参考 README.md）
+# このディレクトリは `practice-06` 用のアプリケーション構成です。
+#
+# 実際の state はローカルではなく、S3 backend に保存されます。
+# backend 側の初期化と state recovery が終わったあとに利用してください。
+#
+# 基本的な流れ:
+# 1. backend 用の S3 / DynamoDB / KMS を用意する
+# 2. GitHub Repository Variables に backend 情報を設定する
+# 3. `terraform-apply` workflow で `practice-06` を plan / apply する

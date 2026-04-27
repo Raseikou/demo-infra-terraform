@@ -1,32 +1,32 @@
-# 注意: 将此文件复制为 terraform.tfvars 以使用自定义值
-# 例如: cp terraform.tfvars.example terraform.tfvars
+# 注意: カスタム値を使う場合は、このファイルを `terraform.tfvars` としてコピーしてください。
+# 例: `cp terraform.tfvars.example terraform.tfvars`
 
-# AWS 区域
+# AWS リージョン
 aws_region = "ap-northeast-1"
 
-# 集群配置
+# クラスター設定
 cluster_name = "demo-eks-cluster"
 environment  = "dev"
 
-# VPC 网络配置
+# VPC ネットワーク設定
 vpc_cidr = "10.0.0.0/16"
 
-# Worker 节点配置
+# Worker ノード設定
 node_desired_size   = 2
 node_max_size       = 2
 node_min_size       = 2
 
-# 实例类型选项:
-# 免费层范围内:
-#   - t3.micro    (1 vCPU, 1GB RAM)   <- 推荐用于演示
-#   - t3.small    (2 vCPU, 2GB RAM)   <- 更好的性能
+# インスタンスタイプ候補:
+# 無料利用枠を意識する場合:
+#   - t3.micro    (1 vCPU, 1GB RAM)   <- デモ向けにおすすめ
+#   - t3.small    (2 vCPU, 2GB RAM)   <- もう少し余裕あり
 #
-# 生产环境推荐（非免费层）:
+# 本番向けの候補（無料利用枠の対象外）:
 #   - t3.medium   (2 vCPU, 4GB RAM)
 #   - m5.large    (2 vCPU, 8GB RAM)
 #   - m6i.large   (2 vCPU, 8GB RAM)
 node_instance_type = "t3.micro"
 
-# 成本优化: 使用 Spot 实例
-# 在 main.tf 中修改:
-# capacity_type = "SPOT"  # 可以节省约 70% 的成本
+# コスト最適化: Spot インスタンスを利用する場合
+# `main.tf` 側で次のように変更します:
+# capacity_type = "SPOT"  # おおよそ 70% 前後のコスト削減が見込めます

@@ -1,4 +1,4 @@
-# DynamoDB Table for Terraform state locking
+# Terraform state lock 用の DynamoDB テーブル
 resource "aws_dynamodb_table" "terraform_lock" {
   name           = var.state_lock_table_name
   hash_key       = "LockID"

@@ -1,4 +1,4 @@
-# Security Group (uses default VPC)
+# デフォルト VPC 上で利用する Security Group
 resource "aws_security_group" "app_sg" {
   name        = "${var.app_name}-sg"
   description = "Security group for application server"
@@ -38,7 +38,7 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-# EC2 Instance (uses default subnet)
+# デフォルトサブネットに配置する EC2 インスタンス
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
@@ -65,7 +65,7 @@ resource "aws_instance" "app" {
   }
 }
 
-# Data source to get the latest Ubuntu 20.04 AMI
+# Ubuntu 20.04 の最新 AMI を取得
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"] # Canonical

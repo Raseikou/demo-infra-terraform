@@ -15,7 +15,7 @@ env:
   AWS_REGION: ap-northeast-1
   TF_VERSION: 1.5.0
 
-# Ensure only one apply runs at a time
+# 同じ state を同時に更新しないよう、apply は常に直列化する
 concurrency:
   group: terraform-apply
   cancel-in-progress: false
@@ -32,6 +32,7 @@ jobs:
         id: check
         shell: bash
         run: |
+          # backend 情報が揃っていない場合は plan/apply に進ませない
           missing_vars=()
 
           [ -n "${{ vars.TF_STATE_BUCKET }}" ] || missing_vars+=("TF_STATE_BUCKET")
@@ -89,6 +90,7 @@ jobs:
       - name: "Terraform Init - ${{ matrix.terraform-dir }}"
         run: |
           cd ${{ matrix.terraform-dir }}
+          # practice-06 用の backend 値は CI 実行時に注入する
           terraform init -no-color \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
@@ -118,6 +120,7 @@ jobs:
       - name: Upload Plan Artifact
         uses: actions/upload-artifact@v4
         with:
+          # apply フェーズでは同じ plan を再利用する
           name: tfplan-${{ matrix.terraform-dir }}
           path: |
             ${{ matrix.terraform-dir }}/tfplan
@@ -165,6 +168,7 @@ jobs:
       - name: "Terraform Init - ${{ matrix.terraform-dir }}"
         run: |
           cd ${{ matrix.terraform-dir }}
+          # apply 側でも同じ backend 設定で初期化し直す
           terraform init -no-color \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \

@@ -379,22 +379,22 @@ resource "aws_eks_node_group" "main" {
 }
 
 output "cluster_id" {
-  description = "EKS 集群名称"
+  description = "EKS クラスター名"
   value       = aws_eks_cluster.main.id
 }
 
 output "cluster_arn" {
-  description = "EKS 集群 ARN"
+  description = "EKS クラスター ARN"
   value       = aws_eks_cluster.main.arn
 }
 
 output "cluster_endpoint" {
-  description = "EKS 集群 API 端点"
+  description = "EKS クラスター API エンドポイント"
   value       = aws_eks_cluster.main.endpoint
 }
 
 output "cluster_certificate_authority" {
-  description = "EKS 集群证书授权"
+  description = "EKS クラスター証明書情報"
   value       = aws_eks_cluster.main.certificate_authority[0].data
   sensitive   = true
 }

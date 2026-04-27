@@ -72,6 +72,7 @@ git push origin feature/your-feature
 | Document | Purpose |
 |---|---|
 | [BACKEND-SETUP.md](BACKEND-SETUP.md) | Backend initialization, architecture, deployment steps |
+| [.github/CICD-README.md](.github/CICD-README.md) | Japanese guide for each CI/CD workflow and job |
 | [TERRAFORM-WORKFLOW.md](TERRAFORM-WORKFLOW.md) | CI/CD workflows, approval gates, troubleshooting |
 
 ## 🔄 CI/CD Pipeline

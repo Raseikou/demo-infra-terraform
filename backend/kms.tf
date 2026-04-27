@@ -1,4 +1,4 @@
-# KMS Key for S3 state file encryption
+# state ファイル暗号化用の KMS キー
 resource "aws_kms_key" "terraform_state" {
   description             = "KMS key for encrypting Terraform state files"
   deletion_window_in_days = 10
@@ -14,7 +14,7 @@ resource "aws_kms_alias" "terraform_state" {
   target_key_id = aws_kms_key.terraform_state.key_id
 }
 
-# KMS Policy - Allow S3 and CloudTrail to use this key
+# S3 と CloudTrail がこのキーを利用できるようにする
 resource "aws_kms_key_policy" "terraform_state" {
   key_id = aws_kms_key.terraform_state.id
 

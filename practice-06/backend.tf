@@ -8,11 +8,9 @@ terraform {
     }
   }
 
-  # S3 Backend Configuration
-  # Backend infrastructure must be created first using ./backend directory.
-  # The actual bucket / lock table / KMS key values are injected at
-  # `terraform init` time so account-specific settings do not need to live
-  # in the repository.
+  # S3 backend の固定設定のみをここに置きます。
+  # 実際の bucket / lock table / KMS ARN は CI 側の `terraform init`
+  # で注入するため、アカウント依存の値をリポジトリに固定しません。
   backend "s3" {
     key     = "practice-06/terraform.tfstate"
     region  = "ap-northeast-1"

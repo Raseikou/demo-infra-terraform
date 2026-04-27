@@ -1,4 +1,4 @@
-# IAM User for CI/CD (GitHub Actions)
+# GitHub Actions から Terraform を実行するための IAM ユーザー
 resource "aws_iam_user" "terraform_cicd" {
   name = "${var.project_name}-terraform-cicd"
 
@@ -7,7 +7,7 @@ resource "aws_iam_user" "terraform_cicd" {
   }
 }
 
-# IAM Policy - S3 state bucket access
+# state バケットへアクセスするための権限
 data "aws_iam_policy_document" "terraform_s3_policy" {
   statement {
     sid    = "S3StateBucketAccess"
@@ -36,7 +36,7 @@ data "aws_iam_policy_document" "terraform_s3_policy" {
   }
 }
 
-# IAM Policy - DynamoDB state locking
+# state lock テーブルを操作するための権限
 data "aws_iam_policy_document" "terraform_dynamodb_policy" {
   statement {
     sid    = "DynamoDBStateLocking"
@@ -54,7 +54,7 @@ data "aws_iam_policy_document" "terraform_dynamodb_policy" {
   }
 }
 
-# IAM Policy - KMS access for encryption
+# KMS 暗号化に必要な最小限の権限
 data "aws_iam_policy_document" "terraform_kms_policy" {
   statement {
     sid    = "KMSEncryptionAccess"
@@ -70,29 +70,29 @@ data "aws_iam_policy_document" "terraform_kms_policy" {
   }
 }
 
-# Attach S3 policy
+# S3 用ポリシーをユーザーへ付与
 resource "aws_iam_user_policy" "terraform_s3_policy" {
   name   = "${var.project_name}-terraform-s3-policy"
   user   = aws_iam_user.terraform_cicd.name
   policy = data.aws_iam_policy_document.terraform_s3_policy.json
 }
 
-# Attach DynamoDB policy
+# DynamoDB 用ポリシーをユーザーへ付与
 resource "aws_iam_user_policy" "terraform_dynamodb_policy" {
   name   = "${var.project_name}-terraform-dynamodb-policy"
   user   = aws_iam_user.terraform_cicd.name
   policy = data.aws_iam_policy_document.terraform_dynamodb_policy.json
 }
 
-# Attach KMS policy
+# KMS 用ポリシーをユーザーへ付与
 resource "aws_iam_user_policy" "terraform_kms_policy" {
   name   = "${var.project_name}-terraform-kms-policy"
   user   = aws_iam_user.terraform_cicd.name
   policy = data.aws_iam_policy_document.terraform_kms_policy.json
 }
 
-# Access keys are intentionally managed outside Terraform.
-# The secret access key is only visible once at creation time, which makes
-# state recovery brittle after a failed runner-based bootstrap. We keep the
-# IAM user and inline policies in Terraform, and store the actual credentials
-# in GitHub Actions secrets.
+# Access Key はあえて Terraform 管理の対象外にしています。
+# secret access key は作成時に一度しか表示されないため、
+# bootstrap 失敗後の state 復旧を難しくしやすいからです。
+# そのため、Terraform では IAM ユーザーと権限だけを管理し、
+# 実際の認証情報は GitHub Secrets に保存します。
